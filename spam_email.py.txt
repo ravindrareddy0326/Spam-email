@@ -1,0 +1,99 @@
+import pandas as pd
+import re
+import math
+
+# Load dataset of emails
+df = pd.read_csv("emails.csv")
+
+# Drop the "Email No." column (not useful for classification)
+df = df.drop("Email No.", axis=1)
+
+# Separate spam and not spam based on Prediction column
+spam = df[df["Prediction"] == 1].drop("Prediction", axis=1)   # Spam emails
+n_spam = df[df["Prediction"] == 0].drop("Prediction", axis=1) # Not spam emails
+
+# Calculate prior probabilities (P(Spam) and P(Not Spam))
+total = len(df)
+probSpam = len(spam) / total
+probNotSpam = len(n_spam) / total
+
+# Initialize frequency dictionaries for words
+spam_frequency = {}
+NotSpam_frequency = {}
+
+# Count word frequencies in spam emails (Laplace smoothing by +1)
+for col in spam.columns:
+    spam_frequency[col] = spam[col].sum() + 1
+
+# Count word frequencies in not spam emails (Laplace smoothing by +1)
+for col in n_spam.columns:
+    NotSpam_frequency[col] = n_spam[col].sum() + 1
+
+# Initialize probability dictionaries
+spam_prob = {}
+NotSpam_prob = {}
+
+# Calculate normalized probabilities for spam words
+total_spam = sum(spam_frequency.values())
+for i in spam_frequency:
+    spam_prob[i] = spam_frequency[i] / total_spam
+
+# Calculate normalized probabilities for not spam words
+total_nspam = sum(NotSpam_frequency.values())
+for i in NotSpam_frequency:
+    NotSpam_prob[i] = NotSpam_frequency[i] / total_nspam
+
+
+# ---------------- Classification Function ----------------
+def classify(spam_dict, nspam_dict, email):
+    # Convert email to lowercase and split into words
+    email = email.lower()
+    words = re.findall(r'\b\w+\b', email)
+
+    # Use global prior probabilities
+    global probSpam
+    global probNotSpam
+    global total_nspam
+    global total_spam
+
+    # Start with log of prior probabilities (avoid underflow)
+    spam = math.log(probSpam)
+    nspam = math.log(probNotSpam)
+
+    # Loop through words in the email
+    for i in words:
+        if (i in spam_dict) or (i in nspam_dict):
+            # If word missing in spam dictionary → apply smoothing
+            if i not in spam_dict:
+                spam = spam + math.log(1 / total_spam)
+            else:
+                spam = spam + math.log(spam_dict[i])
+
+            # If word missing in not spam dictionary → apply smoothing
+            if i not in nspam_dict:
+                nspam = nspam + math.log(1 / total_nspam)
+            else:
+                nspam = nspam + math.log(nspam_dict[i])
+
+    # Decide final classification
+    if spam > nspam:
+        return 1   # Spam
+    elif nspam > spam:
+        return 0   # Not spam
+    else:
+        print("unsure")  # In case both are equal
+
+
+# ---------------- Model Evaluation ----------------
+# Load test dataset
+test = pd.read_csv("spam2.csv")
+
+correct = 0
+# Loop through test emails and classify
+for i in range(0, len(test)):
+    out = classify(spam_prob, NotSpam_prob, test["text"][i])
+    if out == test["spam"][i]:  # Compare prediction with actual
+        correct += 1
+
+# Print accuracy percentage
+print(correct / len(test) * 100)
